@@ -56,10 +56,8 @@ async function main() {
 
   console.log(`Unique waypoints: ${waypointMap.size}`);
 
-  const CHROMIUM_PATH = 'C:\\Users\\Rizaq\\AppData\\Local\\ms-playwright\\chromium-1208\\chrome-win64\\chrome.exe';
   const browser = await chromium.launch({
-    headless: false,
-    executablePath: CHROMIUM_PATH,
+    headless: false
   });
   const context = await browser.newContext();
   const page = await context.newPage();
