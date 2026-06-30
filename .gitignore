@@ -1,0 +1,9 @@
+node_modules
+playwright-report
+.playwright
+.playwright-cli
+test-results
+blob-report
+.cache
+*.log
+*.csv

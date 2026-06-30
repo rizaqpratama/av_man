@@ -1,0 +1,17 @@
+{
+  "name": "av_man",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "latest",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
+}
