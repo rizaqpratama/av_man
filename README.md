@@ -5,7 +5,6 @@ Searches delivery addresses from `addresses.csv` on Google Maps using Playwright
 ## Prerequisites
 
 - Node.js v18+
-- `playwright-cli` installed globally
 
 ## Setup
 
