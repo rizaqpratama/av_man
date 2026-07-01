@@ -7,3 +7,5 @@ blob-report
 .cache
 *.log
 *.csv
+.claude
+.DS_store

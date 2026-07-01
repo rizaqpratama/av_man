@@ -1,7 +1,3 @@
-// scrape_maps_latlong.mjs
-// Reads 50orderrs.csv, searches each unique waypoint address on Google Maps,
-// extracts lat/long from the map URL, and writes waypoint_latlong.csv
-
 import { chromium } from '@playwright/test';
 import fs from 'fs';
 
@@ -35,14 +31,52 @@ function parseCSV(content) {
   });
 }
 
-async function extractCoordsFromUrl(page) {
-  const url = page.url();
-  const match = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+// Right-clicks the pin on the map and reads coordinates from the context menu.
+// The pin lands at the full-viewport center (960, 540) in a 1920x1080 window.
+// useFirstResult: if the address didn't auto-resolve to a /place/, click the
+// first result in the list. When false, returns null for unresolved searches.
+async function extractCoordsFromContextMenu(page, { useFirstResult = false } = {}) {
+  // If still on a /search/ URL (not auto-resolved to a /place/)
+  if (!page.url().includes('/place/')) {
+    if (!useFirstResult) return null;
+
+    const firstResult = page.locator('[role="feed"] a[href*="/maps/place/"], a[href*="/maps/place/"]').first();
+    if (await firstResult.count() === 0) return null;
+
+    await firstResult.click();
+    await page.waitForFunction(
+      () => window.location.href.includes('/place/'),
+      { timeout: 10000 }
+    ).catch(() => {});
+    await page.waitForTimeout(1500);
+  }
+
+  // With a 1920x1080 viewport the pin lands at (960, 540) — far from the
+  // "Ciutkan panel samping" collapse button at ~(480, 336) and its label.
+  await page.mouse.move(960, 540);
+  await page.mouse.down({ button: 'right' });
+  await page.mouse.up({ button: 'right' });
+
+  // Wait for the context menu to appear
+  await page.waitForSelector('[role="menu"]', { timeout: 6000 }).catch(() => {});
+
+  // First menuitemradio always contains "lat, lng"
+  const coordText = await page.evaluate(() => {
+    return document.querySelector('[role="menuitemradio"]')?.textContent?.trim() ?? '';
+  });
+
+  // Dismiss the menu
+  await page.keyboard.press('Escape');
+
+  const match = coordText.match(/^(-?\d+\.\d+),\s*(-?\d+\.\d+)$/);
   if (match) return { lat: match[1], lng: match[2] };
   return null;
 }
 
 async function main() {
+  const useFirstResult = process.argv.includes('--use-first-result');
+  if (useFirstResult) console.log('Mode: use first result for unresolved addresses');
+
   const csvContent = fs.readFileSync('addresses.csv', 'utf-8');
   const records = parseCSV(csvContent);
 
@@ -56,13 +90,15 @@ async function main() {
 
   console.log(`Unique waypoints: ${waypointMap.size}`);
 
-  const browser = await chromium.launch({
-    headless: false
-  });
-  const context = await browser.newContext();
+  const browser = await chromium.launch({ headless: false });
+  const context = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const page = await context.newPage();
 
   const results = [];
+
+  // Open Google Maps once; subsequent searches reuse the same page via the search box
+  await page.goto('https://www.google.com/maps', { waitUntil: 'domcontentloaded', timeout: 20000 });
+  await page.waitForSelector('input[name="q"]', { timeout: 10000 });
 
   let idx = 0;
   for (const [waypointId, address] of waypointMap) {
@@ -71,24 +107,27 @@ async function main() {
     console.log(`  ${address.substring(0, 90)}`);
 
     try {
-      const searchUrl = `https://www.google.com/maps/search/${encodeURIComponent(address)}`;
-      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      // Type into the search box so Google Maps applies full geocoding normalization
+      const searchInput = page.locator('input[name="q"]');
+      await searchInput.click({ clickCount: 3 }); // select all existing text
+      await searchInput.fill(address);
+      await page.keyboard.press('Enter');
 
-      // Wait until the URL contains coordinates (@lat,lng)
+      // Wait for map to resolve (coordinates appear in URL)
       await page.waitForFunction(
         () => window.location.href.includes('@'),
-        { timeout: 12000 }
+        { timeout: 15000 }
       ).catch(() => {});
 
-      // Extra wait for the map to settle
-      await page.waitForTimeout(1500);
+      // Let the map finish rendering
+      await page.waitForTimeout(2000);
 
-      const coords = await extractCoordsFromUrl(page);
+      const coords = await extractCoordsFromContextMenu(page, { useFirstResult });
       if (coords) {
         console.log(`  -> lat=${coords.lat}, lng=${coords.lng}`);
         results.push({ waypoint_id: waypointId, latitude: coords.lat, longitude: coords.lng });
       } else {
-        console.log(`  -> no coordinates found in URL`);
+        console.log(`  -> no coordinates found`);
         results.push({ waypoint_id: waypointId, latitude: '', longitude: '' });
       }
     } catch (err) {
@@ -99,7 +138,6 @@ async function main() {
 
   await browser.close();
 
-  // Write output CSV
   const outputLines = ['waypoint_id,latitude,longitude'];
   for (const r of results) {
     outputLines.push(`${r.waypoint_id},${r.latitude},${r.longitude}`);
