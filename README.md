@@ -1,6 +1,6 @@
 # av_man — Address Verification via Google Maps
 
-Searches delivery addresses from `addresses.csv` on Google Maps using Playwright, extracts the resolved lat/long from the map URL, and saves results to `waypoint_latlong.csv`.
+Searches delivery addresses from `addresses.csv` on Google Maps using Playwright, extracts the resolved lat/long via the map's right-click context menu, and saves results to `waypoint_latlong.csv`.
 
 ## Prerequisites
 
@@ -21,10 +21,16 @@ npm install
 ## Usage
 
 ```bash
-node main.mjs
+node main.mjs [--use-first-result]
 ```
 
-A Chromium browser window will open and search each address automatically. Progress is logged to the console.
+A Chromium browser window will open and type each address into the Google Maps search box automatically. Progress is logged to the console.
+
+### Flags
+
+| Flag | Description |
+|---|---|
+| `--use-first-result` | When an address doesn't auto-resolve to a specific place, click the first result from the search list and use its pin coordinates. Without this flag, unresolved addresses are written with empty lat/long. |
 
 ## Input
 
@@ -51,10 +57,10 @@ waypoint_id,latitude,longitude
 ## How it works
 
 1. Reads `addresses.csv` and builds a unique `waypoint_id → full_address` map
-2. Opens Chromium via Playwright
-3. For each address, navigates to `https://www.google.com/maps/search/<address>`
-4. Waits for Google Maps to resolve the location (`@lat,lng` appears in the URL)
-5. Extracts the coordinates
-6. Writes all results to `waypoint_latlong.csv`
-
-If an address cannot be resolved, its row is written with empty lat/long values.
+2. Opens Chromium via Playwright (1920×1080 viewport)
+3. Navigates to `https://www.google.com/maps` once
+4. For each address, types it into the search box and presses Enter — this applies Google Maps' full geocoding normalization
+5. Waits for the map to resolve the location
+6. If the address auto-resolves to a specific place, right-clicks the pin and reads the coordinates from the context menu
+7. If the address only resolves to a search results list and `--use-first-result` is set, clicks the first result then reads its pin coordinates; otherwise records empty lat/long
+8. Writes all results to `waypoint_latlong.csv`
